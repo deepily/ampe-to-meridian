@@ -1,0 +1,2 @@
+google-cloud-logging>=3.9.0
+google-cloud-aiplatform>=1.43.0

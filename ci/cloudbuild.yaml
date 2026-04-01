@@ -1,0 +1,86 @@
+# Cloud Build pipeline for Meridian
+# Triggered on push to main branch
+# Demonstrates CI/CD & Deployment competency
+
+steps:
+  # Step 1: Install dependencies
+  - name: 'python:3.11-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --quiet -r requirements.txt
+        pip install --quiet pytest pytest-cov ruff
+
+  # Step 2: Lint
+  - name: 'python:3.11-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --quiet ruff
+        ruff check src/ tests/
+
+  # Step 3: Unit tests
+  - name: 'python:3.11-slim'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --quiet -r requirements.txt
+        pip install --quiet pytest pytest-cov statsmodels scipy fastapi httpx uvicorn
+        PYTHONPATH=src pytest tests/unit/ -v --tb=short --junitxml=test-results.xml
+
+  # Step 4: Validate Terraform
+  - name: 'hashicorp/terraform:1.7'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        cd infrastructure/environments
+        terraform init -backend=false
+        terraform validate
+
+  # Step 5: Build training container
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/meridian/training:$SHORT_SHA'
+      - '-f'
+      - 'docker/training/Dockerfile'
+      - '.'
+
+  # Step 6: Build serving container
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/meridian/serving:$SHORT_SHA'
+      - '-f'
+      - 'docker/serving/Dockerfile'
+      - '.'
+
+  # Step 7: Push containers to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/meridian/training:$SHORT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'us-central1-docker.pkg.dev/$PROJECT_ID/meridian/serving:$SHORT_SHA'
+
+# Store test results
+artifacts:
+  objects:
+    location: 'gs://meridian-artifacts-dev-$PROJECT_ID/build-artifacts/$BUILD_ID'
+    paths:
+      - 'test-results.xml'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+timeout: '1200s'

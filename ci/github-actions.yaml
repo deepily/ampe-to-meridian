@@ -1,0 +1,94 @@
+# GitHub Actions CI/CD for Meridian
+# Mirrors Cloud Build pipeline for cross-platform CI
+# Demonstrates CI/CD & Deployment competency
+
+name: Meridian CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: '3.11'
+  GCP_PROJECT_ID: 'ampe-to-meridian'
+  GCP_REGION: 'us-central1'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install ruff
+      - run: ruff check src/ tests/
+
+  test:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest pytest-cov statsmodels scipy fastapi httpx uvicorn
+
+      - name: Run unit tests
+        run: |
+          PYTHONPATH=src pytest tests/unit/ -v --tb=short --cov=src --cov-report=xml
+
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.7.0'
+
+      - name: Terraform validate
+        working-directory: infrastructure/environments
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  # Deploy job only runs on main branch push (not PRs)
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [test, terraform-validate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    # Workload Identity Federation (no JSON key files)
+    # Demonstrates Authentication & Authorization competency
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/${{ env.GCP_PROJECT_ID }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider'
+          service_account: 'meridian-pipeline-dev@${{ env.GCP_PROJECT_ID }}.iam.gserviceaccount.com'
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Submit Cloud Build
+        run: |
+          gcloud builds submit --config=ci/cloudbuild.yaml --project=${{ env.GCP_PROJECT_ID }}

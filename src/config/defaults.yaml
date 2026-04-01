@@ -1,0 +1,62 @@
+# Meridian Pipeline Defaults
+# Override via experiment YAML or MERIDIAN_* environment variables
+
+data:
+  project_id: "ampe-to-meridian"
+  dataset_id: "meridian_student_data_dev"
+  training_bucket: "meridian-training-data-dev"
+  artifacts_bucket: "meridian-artifacts-dev"
+  region: "us-central1"
+  num_students: 50000
+  retention_rate: 0.75
+  random_seed: 42
+
+pipeline:
+  pipeline_name: "meridian-retention-pipeline"
+  pipeline_root: "gs://meridian-artifacts-dev/pipeline_root"
+  enable_caching: true
+  experiment_name: "meridian-baseline"
+
+training:
+  analysis_type: "retention"
+  model_type: "classification"
+  target_name: "second_year_ret_flag"
+  algorithms:
+    - "xgboost"
+    - "random_forest"
+    - "logistic_regression"
+    - "adaboost"
+    - "decision_tree"
+    - "gradient_boosting"
+  smote_strategies:
+    - "none"
+    - "smote"
+  smote_which_rate: "tn"
+  competition_metric: "tn"
+  test_size: 0.2
+  cross_val_folds: 5
+
+vizier:
+  enabled: true
+  max_trial_count: 20
+  parallel_trial_count: 3
+  algorithm: "xgboost"
+
+security:
+  dlp_enabled: true
+  dlp_pii_threshold: 0.05
+
+monitoring:
+  model_monitoring_enabled: true
+  drift_threshold_js: 0.1
+  skew_threshold: 0.1
+  prediction_log_table: "prediction_log"
+  alerting_enabled: true
+
+dimensionality:
+  correlation_threshold: 0.85
+  vif_threshold: 10.0
+  correlation_method: "pearson"
+  skip_columns:
+    - "campus_longitude"
+    - "campus_latitude"

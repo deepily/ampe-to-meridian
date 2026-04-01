@@ -1,0 +1,8 @@
+[
+  {"name": "student_id",           "type": "STRING",  "mode": "REQUIRED", "description": "Foreign key to student_demographics"},
+  {"name": "event_type",           "type": "STRING",  "mode": "REQUIRED", "description": "Event type (application, acceptance, enrollment, withdrawal, graduation)"},
+  {"name": "event_date",           "type": "DATE",    "mode": "REQUIRED", "description": "Date of event"},
+  {"name": "term",                 "type": "STRING",  "mode": "NULLABLE", "description": "Associated academic term"},
+  {"name": "enrollment_status",    "type": "STRING",  "mode": "NULLABLE", "description": "Enrollment status (full-time, part-time, not_enrolled)"},
+  {"name": "second_year_ret_flag", "type": "INT64",   "mode": "NULLABLE", "description": "Target variable: 1=retained, 0=not retained"}
+]

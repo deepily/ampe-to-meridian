@@ -1,0 +1,12 @@
+[
+  {"name": "student_id",          "type": "STRING",  "mode": "REQUIRED", "description": "Foreign key to student_demographics"},
+  {"name": "fafsa_filed_date",    "type": "DATE",    "mode": "NULLABLE", "description": "FAFSA filing date"},
+  {"name": "efc",                 "type": "FLOAT64", "mode": "NULLABLE", "description": "Expected Family Contribution"},
+  {"name": "pell_eligible",       "type": "BOOLEAN", "mode": "NULLABLE", "description": "Pell Grant eligible"},
+  {"name": "total_aid_amount",    "type": "FLOAT64", "mode": "NULLABLE", "description": "Total financial aid awarded"},
+  {"name": "loan_amount",         "type": "FLOAT64", "mode": "NULLABLE", "description": "Total loan amount"},
+  {"name": "grant_amount",        "type": "FLOAT64", "mode": "NULLABLE", "description": "Total grant amount"},
+  {"name": "scholarship_amount",  "type": "FLOAT64", "mode": "NULLABLE", "description": "Total scholarship amount"},
+  {"name": "unmet_need",          "type": "FLOAT64", "mode": "NULLABLE", "description": "Unmet financial need"},
+  {"name": "work_study_flag",     "type": "BOOLEAN", "mode": "NULLABLE", "description": "Federal work-study participant"}
+]

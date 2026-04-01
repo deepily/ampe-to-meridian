@@ -1,0 +1,11 @@
+[
+  {"name": "prediction_id",        "type": "STRING",    "mode": "REQUIRED", "description": "Unique prediction request ID"},
+  {"name": "student_id",           "type": "STRING",    "mode": "REQUIRED", "description": "Student being predicted"},
+  {"name": "prediction_timestamp", "type": "TIMESTAMP", "mode": "REQUIRED", "description": "When prediction was made"},
+  {"name": "model_version",        "type": "STRING",    "mode": "REQUIRED", "description": "Model version used"},
+  {"name": "predicted_class",      "type": "INT64",     "mode": "REQUIRED", "description": "Predicted class (0 or 1)"},
+  {"name": "predicted_probability","type": "FLOAT64",   "mode": "REQUIRED", "description": "Prediction probability"},
+  {"name": "features_json",        "type": "STRING",    "mode": "NULLABLE", "description": "Input features as JSON"},
+  {"name": "latency_ms",           "type": "FLOAT64",   "mode": "NULLABLE", "description": "Prediction latency in milliseconds"},
+  {"name": "served_from_cache",    "type": "BOOLEAN",   "mode": "NULLABLE", "description": "Whether prediction was served from Memorystore cache"}
+]

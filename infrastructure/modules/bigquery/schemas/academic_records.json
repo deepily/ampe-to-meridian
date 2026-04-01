@@ -1,0 +1,14 @@
+[
+  {"name": "student_id",         "type": "STRING",  "mode": "REQUIRED", "description": "Foreign key to student_demographics"},
+  {"name": "term",               "type": "STRING",  "mode": "REQUIRED", "description": "Academic term (e.g., Fall 2019)"},
+  {"name": "term_code",          "type": "INT64",   "mode": "REQUIRED", "description": "Numeric term code for partitioning (e.g., 201900)"},
+  {"name": "term_gpa",           "type": "FLOAT64", "mode": "NULLABLE", "description": "Term GPA (0.0-4.0)"},
+  {"name": "cumulative_gpa",     "type": "FLOAT64", "mode": "NULLABLE", "description": "Cumulative GPA (0.0-4.0)"},
+  {"name": "credits_attempted",  "type": "INT64",   "mode": "NULLABLE", "description": "Credits attempted this term"},
+  {"name": "credits_earned",     "type": "INT64",   "mode": "NULLABLE", "description": "Credits earned this term"},
+  {"name": "course_count",       "type": "INT64",   "mode": "NULLABLE", "description": "Number of courses this term"},
+  {"name": "major",              "type": "STRING",  "mode": "NULLABLE", "description": "Declared major"},
+  {"name": "major_changed_flag", "type": "BOOLEAN", "mode": "NULLABLE", "description": "Changed major this term"},
+  {"name": "academic_standing",  "type": "STRING",  "mode": "NULLABLE", "description": "Academic standing (good/probation/suspension)"},
+  {"name": "campus",             "type": "STRING",  "mode": "NULLABLE", "description": "Campus for this term"}
+]
