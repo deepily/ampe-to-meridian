@@ -98,13 +98,15 @@ def _get_smote_algorithm( strategy: str ):
 
 
 def train(
-    input_path        : str,
-    output_dir        : str,
-    target_column     : str = "second_year_ret_flag",
-    algorithms        : list = None,
-    smote_strategies  : list = None,
-    test_size         : float = 0.2,
-    competition_metric: str = "tn_rate",
+    input_path           : str,
+    output_dir           : str,
+    target_column        : str = "second_year_ret_flag",
+    algorithms           : list = None,
+    smote_strategies     : list = None,
+    test_size            : float = 0.2,
+    competition_metric   : str = "tn_rate",
+    use_tensorboard      : bool = False,
+    tensorboard_resource : Optional[str] = None,
 ) -> dict:
     """
     Train multiple algorithms with SMOTE strategies and select the best.
@@ -193,6 +195,10 @@ def train(
             for r in all_results
         ]
         json.dump( serializable, f, indent=2, default=str )
+
+    # ---- TensorBoard Logging (optional) ----
+    if use_tensorboard:
+        _log_to_tensorboard( all_results, output_dir, tensorboard_resource )
 
     logger.info(
         f"Training complete. Winner: {winner[ 'algorithm' ]}/{winner[ 'smote_strategy' ]} "
@@ -288,3 +294,61 @@ def _select_winner( results: list, metric: str ) -> dict:
         "f1"             : winner[ "f1" ],
         "model_path"     : winner[ "model_path" ],
     }
+
+
+def _log_to_tensorboard(
+    results              : list,
+    output_dir           : str,
+    tensorboard_resource : Optional[str] = None,
+):
+    """
+    Log training metrics to TensorBoard.
+
+    Writes local TensorBoard logs. If tensorboard_resource is provided,
+    streams to Vertex AI TensorBoard instance.
+
+    Requires:
+        - results is a non-empty list of model result dicts
+        - output_dir is a valid writable directory path
+
+    Ensures:
+        - TensorBoard event files written to output_dir/tensorboard/
+        - Metrics logged per algorithm/smote_strategy combination
+        - Vertex AI TensorBoard upload attempted if tensorboard_resource provided
+        - Graceful degradation if tensorboard package not installed
+    """
+    try:
+        from torch.utils.tensorboard import SummaryWriter
+    except ImportError:
+        try:
+            from tensorboardX import SummaryWriter
+        except ImportError:
+            logger.warning( "TensorBoard not available. Install tensorboard or tensorboardX." )
+            return
+
+    tb_dir = os.path.join( output_dir, "tensorboard" )
+    writer = SummaryWriter( log_dir=tb_dir )
+
+    for i, r in enumerate( results ):
+        tag_prefix = f"{r[ 'algorithm' ]}/{r[ 'smote_strategy' ]}"
+        writer.add_scalar( f"{tag_prefix}/accuracy", r.get( "accuracy", 0 ), i )
+        writer.add_scalar( f"{tag_prefix}/auc",      r.get( "auc", 0 ),      i )
+        writer.add_scalar( f"{tag_prefix}/tp_rate",   r.get( "tp_rate", 0 ),  i )
+        writer.add_scalar( f"{tag_prefix}/tn_rate",   r.get( "tn_rate", 0 ),  i )
+        writer.add_scalar( f"{tag_prefix}/f1",        r.get( "f1", 0 ),       i )
+
+    writer.close()
+    logger.info( f"TensorBoard logs written to {tb_dir}" )
+
+    # Stream to Vertex AI TensorBoard if resource provided
+    if tensorboard_resource:
+        try:
+            from google.cloud import aiplatform
+            aiplatform.upload_tb_log(
+                tensorboard_id=tensorboard_resource,
+                tensorboard_experiment_name="meridian-training",
+                logdir=tb_dir,
+            )
+            logger.info( f"TensorBoard logs streamed to Vertex AI: {tensorboard_resource}" )
+        except Exception as e:
+            logger.warning( f"Vertex AI TensorBoard upload failed: {e}" )

@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Meridian Retention Prediction API
+  description: Predicts second-year student retention probability. Part of the Meridian
+    GCP-native ML pipeline.
+  version: 1.0.0
+paths:
+  /health:
+    get:
+      tags:
+      - System
+      summary: Health
+      description: Health check for load balancer.
+      operationId: health_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/predict:
+    post:
+      tags:
+      - Prediction
+      summary: Predict
+      description: 'Predict student retention probability.
+
+
+        Returns a retention prediction (0/1) with probability score.'
+      operationId: predict_api_v1_predict_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PredictionRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PredictionResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+        model_loaded:
+          type: boolean
+          title: Model Loaded
+        model_path:
+          type: string
+          title: Model Path
+      type: object
+      required:
+      - status
+      - model_loaded
+      - model_path
+      title: HealthResponse
+      description: Health check response.
+    PredictionRequest:
+      properties:
+        student_id:
+          type: string
+          title: Student Id
+          description: Unique student identifier
+        hs_gpa:
+          anyOf:
+          - type: number
+            maximum: 4.0
+            minimum: 0.0
+          - type: 'null'
+          title: Hs Gpa
+          description: High school GPA
+        sat_score:
+          anyOf:
+          - type: number
+            maximum: 1600.0
+            minimum: 400.0
+          - type: 'null'
+          title: Sat Score
+          description: SAT composite score
+        cumulative_gpa:
+          anyOf:
+          - type: number
+            maximum: 4.0
+            minimum: 0.0
+          - type: 'null'
+          title: Cumulative Gpa
+        credits_earned:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Credits Earned
+        credits_attempted:
+          anyOf:
+          - type: integer
+            minimum: 0.0
+          - type: 'null'
+          title: Credits Attempted
+        efc:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Efc
+          description: Expected Family Contribution
+        total_aid_amount:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Total Aid Amount
+        loan_amount:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Loan Amount
+        campus_distance_miles:
+          anyOf:
+          - type: number
+            minimum: 0.0
+          - type: 'null'
+          title: Campus Distance Miles
+        first_generation_flag:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: First Generation Flag
+        pell_eligible:
+          anyOf:
+          - type: boolean
+          - type: 'null'
+          title: Pell Eligible
+      type: object
+      required:
+      - student_id
+      title: PredictionRequest
+      description: Student features for retention prediction.
+    PredictionResponse:
+      properties:
+        student_id:
+          type: string
+          title: Student Id
+        predicted_class:
+          type: integer
+          title: Predicted Class
+          description: 0=not retained, 1=retained
+        retention_probability:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Retention Probability
+        model_version:
+          type: string
+          title: Model Version
+        latency_ms:
+          type: number
+          title: Latency Ms
+      type: object
+      required:
+      - student_id
+      - predicted_class
+      - retention_probability
+      - model_version
+      - latency_ms
+      title: PredictionResponse
+      description: Retention prediction result.
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+

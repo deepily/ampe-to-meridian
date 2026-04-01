@@ -40,9 +40,9 @@ def ingest_from_bigquery(
         - Returns path to merged Parquet file
         - Merged on student_id with left joins from demographics
     """
-    from google.cloud import bigquery
+    from utils.bq_client import BigQueryClient
 
-    client = bigquery.Client( project=project_id )
+    bq = BigQueryClient( project_id )
 
     tables = {
         "demographics"     : f"{project_id}.{dataset_id}.student_demographics",
@@ -53,10 +53,7 @@ def ingest_from_bigquery(
 
     dfs = {}
     for name, table_id in tables.items():
-        logger.info( f"Reading {name} from {table_id}" )
-        df = client.list_rows( table_id ).to_dataframe()
-        dfs[ name ] = df
-        logger.info( f"  {name}: {len( df ):,} rows" )
+        dfs[ name ] = bq.list_rows( table_id )
 
     merged = merge_tables( dfs )
 

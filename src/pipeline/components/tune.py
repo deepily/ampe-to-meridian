@@ -222,17 +222,145 @@ def _tune_with_vizier(
     Requires:
         - google-cloud-aiplatform installed
         - GCP credentials configured
+        - algorithm is a key in SEARCH_SPACES
 
     Ensures:
-        - Creates a Vizier study, runs trials, returns best parameters
+        - Creates a Vizier study with the algorithm's search space
+        - Runs n_iter trials with Bayesian optimization
+        - Returns best parameters and fitted model
+
+    Raises:
+        - Falls back to local search if Vizier study fails
     """
     from google.cloud import aiplatform
+    from pipeline.components.train import _get_xgboost, ALGORITHMS
 
     aiplatform.init( project=project_id, location=region )
 
-    # Build Vizier study config from search space
     param_space = SEARCH_SPACES.get( algorithm, {} )
+    if not param_space:
+        logger.warning( f"No search space for {algorithm}. Falling back to local." )
+        return _tune_local( X_train, y_train, X_test, y_test, algorithm, n_iter, 5 )
 
-    # For now, fall back to local (Vizier integration is Phase 3 live test)
-    logger.info( "Vizier mode requested — falling back to local search for now" )
-    return _tune_local( X_train, y_train, X_test, y_test, algorithm, n_iter, 5 )
+    # Build parameter specs for Vizier
+    from google.cloud.aiplatform import hyperparameter_tuning as hpt
+
+    metric_spec    = { "roc_auc": "maximize" }
+    parameter_spec = {}
+
+    for param_name, values in param_space.items():
+        if all( isinstance( v, ( int, float ) ) for v in values if v is not None ):
+            # Filter None values
+            numeric_values = [ v for v in values if v is not None ]
+            if not numeric_values:
+                continue
+            if all( isinstance( v, int ) for v in numeric_values ):
+                parameter_spec[ param_name ] = hpt.IntegerParameterSpec(
+                    min=min( numeric_values ), max=max( numeric_values ), scale="unit"
+                )
+            else:
+                parameter_spec[ param_name ] = hpt.DoubleParameterSpec(
+                    min=min( numeric_values ), max=max( numeric_values ), scale="unit"
+                )
+        elif all( isinstance( v, str ) for v in values ):
+            parameter_spec[ param_name ] = hpt.CategoricalParameterSpec(
+                values=values
+            )
+
+    # Since Vizier's native API requires a training application,
+    # we use the local model training with Vizier-suggested parameters
+    # via the Vizier client for parameter suggestions
+    try:
+        from google.cloud.aiplatform.vizier import Study
+
+        study_config = {
+            "display_name" : f"meridian-{algorithm}-tuning",
+            "metrics"      : [ { "metric_id": "roc_auc", "goal": "MAXIMIZE" } ],
+            "parameters"   : [],
+        }
+
+        # Build parameter list from search space
+        for param_name, values in param_space.items():
+            numeric_values = [ v for v in values if v is not None ]
+            if not numeric_values:
+                continue
+
+            if all( isinstance( v, int ) for v in numeric_values ):
+                study_config[ "parameters" ].append( {
+                    "parameter_id"     : param_name,
+                    "integer_value_spec" : {
+                        "min_value" : min( numeric_values ),
+                        "max_value" : max( numeric_values ),
+                    },
+                } )
+            elif all( isinstance( v, ( int, float ) ) for v in numeric_values ):
+                study_config[ "parameters" ].append( {
+                    "parameter_id"    : param_name,
+                    "double_value_spec" : {
+                        "min_value" : float( min( numeric_values ) ),
+                        "max_value" : float( max( numeric_values ) ),
+                    },
+                } )
+            elif all( isinstance( v, str ) for v in values ):
+                study_config[ "parameters" ].append( {
+                    "parameter_id"           : param_name,
+                    "categorical_value_spec" : { "values": values },
+                } )
+
+        study = Study.create_or_load( display_name=f"meridian-{algorithm}-tuning", problem=study_config )
+
+        best_score  = -1.0
+        best_params = {}
+        best_model  = None
+
+        for trial_idx in range( min( n_iter, 20 ) ):
+            # Get suggested parameters from Vizier
+            suggestions = study.suggest( count=1 )
+            if not suggestions:
+                break
+
+            trial  = suggestions[ 0 ]
+            params = {}
+            for p in trial.parameters:
+                params[ p.parameter_id ] = p.value
+
+            # Train model with suggested params
+            if algorithm == "xgboost":
+                model = _get_xgboost()
+            else:
+                factory = ALGORITHMS.get( algorithm )
+                model   = factory()
+
+            # Apply params
+            valid_params = { k: v for k, v in params.items() if hasattr( model, k ) }
+            model.set_params( **valid_params )
+            model.fit( X_train, y_train )
+
+            # Evaluate
+            from sklearn.metrics import roc_auc_score
+            y_prob = model.predict_proba( X_test )[ :, 1 ] if hasattr( model, "predict_proba" ) else model.predict( X_test ).astype( float )
+            score  = float( roc_auc_score( y_test, y_prob ) )
+
+            # Report to Vizier
+            trial.complete( final_measurement={ "metrics": { "roc_auc": score } } )
+
+            logger.info( f"  Vizier trial {trial_idx + 1}/{n_iter}: roc_auc={score:.4f}" )
+
+            if score > best_score:
+                best_score  = score
+                best_params = params
+                best_model  = model
+
+        return {
+            "algorithm"   : algorithm,
+            "best_params" : best_params,
+            "best_score"  : best_score,
+            "test_score"  : best_score,
+            "model"       : best_model,
+            "mode"        : "vertex_vizier",
+            "n_iter"      : n_iter,
+        }
+
+    except Exception as e:
+        logger.warning( f"Vizier study failed: {e}. Falling back to local search." )
+        return _tune_local( X_train, y_train, X_test, y_test, algorithm, n_iter, 5 )

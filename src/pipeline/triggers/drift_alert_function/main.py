@@ -64,23 +64,53 @@ def handle_drift_alert( event, context ):
 
 
 def _trigger_retraining( alert: dict ):
-    """Trigger Vertex AI Pipeline rerun for retraining."""
+    """
+    Trigger Vertex AI Pipeline rerun for retraining.
 
-    project_id = os.environ.get( "GCP_PROJECT_ID", "ampe-to-meridian" )
-    region     = os.environ.get( "GCP_REGION", "us-central1" )
+    Requires:
+        - alert is a dict containing drift detection details
+        - GCP_PROJECT_ID and GCP_REGION environment variables set
+
+    Ensures:
+        - A new PipelineJob is submitted to Vertex AI
+        - Drift alert metadata is passed as pipeline parameters
+
+    Raises:
+        - Logs error if pipeline submission fails
+    """
+    import datetime
+    import logging
+
+    logger = logging.getLogger( "drift_alert" )
+
+    project_id     = os.environ.get( "GCP_PROJECT_ID", "ampe-to-meridian" )
+    region         = os.environ.get( "GCP_REGION", "us-central1" )
+    pipeline_name  = "meridian-retention-pipeline"
 
     try:
         from google.cloud import aiplatform
 
         aiplatform.init( project=project_id, location=region )
 
-        # Submit pipeline job
-        # In production, this would reference the compiled pipeline JSON
-        import logging
-        logging.getLogger( "drift_alert" ).info(
-            f"Would trigger pipeline retraining in {project_id}/{region}. "
-            f"Alert: {json.dumps( alert, default=str )[ :200 ]}"
+        # Compiled pipeline template location in GCS
+        template_path = f"gs://meridian-pipeline-artifacts-dev-{project_id}/pipelines/{pipeline_name}.json"
+
+        job = aiplatform.PipelineJob(
+            display_name     = f"{pipeline_name}-drift-retrain-{datetime.datetime.now().strftime( '%Y%m%d-%H%M%S' )}",
+            template_path    = template_path,
+            pipeline_root    = f"gs://meridian-pipeline-artifacts-dev-{project_id}/pipeline-runs",
+            parameter_values = {
+                "trigger"          : "drift_alert",
+                "drifted_features" : str( alert.get( "drifted_features", 0 ) ),
+                "prediction_drift" : str( alert.get( "prediction_drift", {} ).get( "drifted", False ) ),
+            },
         )
+
+        job.submit(
+            service_account = f"meridian-pipeline-dev@{project_id}.iam.gserviceaccount.com",
+        )
+
+        logger.info( f"Retraining pipeline submitted: {job.resource_name}" )
+
     except Exception as e:
-        import logging
-        logging.getLogger( "drift_alert" ).error( f"Failed to trigger retraining: {e}" )
+        logger.error( f"Failed to trigger retraining: {e}" )

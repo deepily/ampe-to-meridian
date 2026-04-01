@@ -38,6 +38,9 @@ def register(
     use_vertex_registry : bool = False,
     project_id          : Optional[str] = None,
     region              : Optional[str] = None,
+    version_aliases     : list = None,
+    is_default_version  : bool = True,
+    pipeline_run_id     : Optional[str] = None,
 ) -> dict:
     """
     Register model with metadata and lineage.
@@ -110,7 +113,12 @@ def register(
         json.dump( model_card, f, indent=2 )
 
     if use_vertex_registry and project_id:
-        _register_to_vertex( registered_path, registry_entry, project_id, region )
+        _register_to_vertex(
+            registered_path, registry_entry, project_id, region,
+            version_aliases=version_aliases,
+            is_default_version=is_default_version,
+            pipeline_run_id=pipeline_run_id,
+        )
 
     logger.info(
         f"Model registered: {model_display_name} {version} "
@@ -172,25 +180,92 @@ def _generate_model_card_metadata(
 
 
 def _register_to_vertex(
-    model_path     : str,
-    registry_entry : dict,
-    project_id     : str,
-    region         : str,
+    model_path         : str,
+    registry_entry     : dict,
+    project_id         : str,
+    region             : str,
+    version_aliases    : list = None,
+    is_default_version : bool = True,
+    pipeline_run_id    : Optional[str] = None,
 ):
-    """Register model in Vertex AI Model Registry."""
+    """
+    Register model in Vertex AI Model Registry with versioning support.
+
+    Requires:
+        - model_path points to a valid model artifact
+        - registry_entry contains model metadata (display_name, algorithm, version)
+        - project_id and region are valid GCP identifiers
+
+    Ensures:
+        - If a model with the same display name exists, uploads as a new version
+        - Otherwise creates a new model resource
+        - Applies version aliases (e.g., ["latest", "candidate"])
+        - Links model to pipeline run via metadata labels
+        - Returns the registered model resource name
+
+    Raises:
+        - Logs error and re-raises if registration fails
+    """
     from google.cloud import aiplatform
 
     aiplatform.init( project=project_id, location=region )
 
-    model = aiplatform.Model.upload(
-        display_name=registry_entry[ "model_display_name" ],
-        artifact_uri=os.path.dirname( model_path ),
-        serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest",
-        description=registry_entry[ "model_description" ],
-        labels={
-            "algorithm"      : registry_entry[ "algorithm" ],
-            "version"        : registry_entry[ "version" ],
-        },
-    )
+    if version_aliases is None:
+        version_aliases = [ "latest" ]
 
-    logger.info( f"Model registered in Vertex AI: {model.resource_name}" )
+    # Build labels with model lineage information
+    labels = {
+        "algorithm" : registry_entry[ "algorithm" ],
+        "version"   : registry_entry[ "version" ],
+    }
+    if pipeline_run_id:
+        labels[ "pipeline_run_id" ] = pipeline_run_id
+
+    display_name = registry_entry[ "model_display_name" ]
+
+    # Check for existing model by display name to upload as new version
+    try:
+        existing_models = aiplatform.Model.list(
+            filter=f'display_name="{display_name}"',
+        )
+
+        if existing_models:
+            # Upload as a new version of the existing model
+            parent_model = existing_models[ 0 ]
+            logger.info(
+                f"Found existing model: {parent_model.resource_name}. "
+                f"Uploading as new version."
+            )
+
+            model = aiplatform.Model.upload(
+                display_name               = display_name,
+                parent_model               = parent_model.resource_name,
+                artifact_uri               = os.path.dirname( model_path ),
+                serving_container_image_uri = "us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest",
+                description                = registry_entry[ "model_description" ],
+                labels                     = labels,
+                version_aliases            = version_aliases,
+                is_default_version         = is_default_version,
+            )
+
+            logger.info(
+                f"New model version registered: {model.resource_name} "
+                f"(aliases: {version_aliases}, default: {is_default_version})"
+            )
+        else:
+            # Create new model resource
+            model = aiplatform.Model.upload(
+                display_name               = display_name,
+                artifact_uri               = os.path.dirname( model_path ),
+                serving_container_image_uri = "us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest",
+                description                = registry_entry[ "model_description" ],
+                labels                     = labels,
+                version_aliases            = version_aliases,
+                is_default_version         = is_default_version,
+            )
+
+            logger.info( f"New model registered in Vertex AI: {model.resource_name}" )
+
+    except Exception as e:
+        logger.error( f"Vertex AI model registration failed: {e}" )
+        raise

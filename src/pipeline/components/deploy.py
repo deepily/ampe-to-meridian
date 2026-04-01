@@ -29,14 +29,16 @@ logger = get_logger( __name__, component="deploy" )
 
 
 def deploy(
-    model_path          : str,
-    input_path          : str,
-    output_dir          : str,
-    target_column       : str = "second_year_ret_flag",
-    traffic_split       : dict = None,
-    use_vertex_endpoint : bool = False,
-    project_id          : Optional[str] = None,
-    region              : Optional[str] = None,
+    model_path            : str,
+    input_path            : str,
+    output_dir            : str,
+    target_column         : str = "second_year_ret_flag",
+    traffic_split         : dict = None,
+    use_vertex_endpoint   : bool = False,
+    project_id            : Optional[str] = None,
+    region                : Optional[str] = None,
+    serving_container_uri : Optional[str] = None,
+    undeploy_previous     : bool = False,
 ) -> dict:
     """
     Deploy model and generate batch predictions.
@@ -108,7 +110,11 @@ def deploy(
         pred_stats[ "batch_auc" ]      = float( roc_auc_score( y, probabilities ) )
 
     if use_vertex_endpoint and project_id:
-        endpoint_info = _deploy_to_vertex( model_path, project_id, region, traffic_split )
+        endpoint_info = _deploy_to_vertex(
+            model_path, project_id, region, traffic_split,
+            serving_container_uri=serving_container_uri,
+            undeploy_previous=undeploy_previous,
+        )
     else:
         endpoint_info = {
             "mode"           : "local_batch",
@@ -134,48 +140,117 @@ def deploy(
 
 
 def _deploy_to_vertex(
-    model_path    : str,
-    project_id    : str,
-    region        : str,
-    traffic_split : dict,
+    model_path            : str,
+    project_id            : str,
+    region                : str,
+    traffic_split         : dict,
+    serving_container_uri : Optional[str] = None,
+    undeploy_previous     : bool = False,
 ) -> dict:
-    """Deploy model to Vertex AI Prediction endpoint with traffic splitting."""
+    """
+    Deploy model to Vertex AI Prediction endpoint with traffic splitting.
+
+    Requires:
+        - model_path points to a valid model artifact directory
+        - project_id is a valid GCP project ID
+        - region is a valid GCP region
+
+    Ensures:
+        - Model uploaded to Vertex AI Model Registry
+        - Endpoint created or reused
+        - New model deployed with traffic split
+        - Previous model optionally undeployed
+        - Returns deployment metadata with endpoint info
+
+    Raises:
+        - Logs error and re-raises if deployment fails
+    """
     from google.cloud import aiplatform
 
     aiplatform.init( project=project_id, location=region )
 
+    # Default to pre-built sklearn container if no custom container specified
+    if serving_container_uri is None:
+        serving_container_uri = "us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest"
+
     # Upload model
-    model = aiplatform.Model.upload(
-        display_name="meridian-retention-classifier",
-        artifact_uri=os.path.dirname( model_path ),
-        serving_container_image_uri="us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest",
-    )
+    try:
+        model = aiplatform.Model.upload(
+            display_name               = "meridian-retention-classifier",
+            artifact_uri               = os.path.dirname( model_path ),
+            serving_container_image_uri = serving_container_uri,
+        )
+        logger.info( f"Model uploaded: {model.resource_name}" )
+    except Exception as e:
+        logger.error( f"Model upload failed: {e}" )
+        raise
 
     # Create or get endpoint
-    endpoints = aiplatform.Endpoint.list(
-        filter='display_name="meridian-retention-endpoint"',
-    )
-
-    if endpoints:
-        endpoint = endpoints[ 0 ]
-    else:
-        endpoint = aiplatform.Endpoint.create(
-            display_name="meridian-retention-endpoint",
+    try:
+        endpoints = aiplatform.Endpoint.list(
+            filter='display_name="meridian-retention-endpoint"',
         )
 
-    # Deploy with traffic split
-    model.deploy(
-        endpoint=endpoint,
-        deployed_model_display_name="meridian-v1",
-        machine_type="n1-standard-2",
-        min_replica_count=1,
-        max_replica_count=3,
-        traffic_percentage=traffic_split.get( "primary", 100 ),
-    )
+        if endpoints:
+            endpoint = endpoints[ 0 ]
+            logger.info( f"Reusing existing endpoint: {endpoint.resource_name}" )
+        else:
+            endpoint = aiplatform.Endpoint.create(
+                display_name = "meridian-retention-endpoint",
+            )
+            logger.info( f"Created new endpoint: {endpoint.resource_name}" )
+    except Exception as e:
+        logger.error( f"Endpoint creation/lookup failed: {e}" )
+        raise
+
+    # Capture existing deployed models for traffic splitting / undeploy
+    existing_models = {}
+    try:
+        deployed = endpoint.gca_resource.deployed_models
+        for dm in deployed:
+            existing_models[ dm.id ] = dm.display_name
+    except Exception:
+        pass  # No existing deployments
+
+    # Build traffic split: new model gets primary percentage, rest distributed
+    primary_pct   = traffic_split.get( "primary", 100 )
+    remaining_pct = 100 - primary_pct
+
+    # Deploy new model version
+    try:
+        import datetime
+        version_label = datetime.datetime.now().strftime( "%Y%m%d-%H%M%S" )
+
+        model.deploy(
+            endpoint                    = endpoint,
+            deployed_model_display_name = f"meridian-{version_label}",
+            machine_type                = "n1-standard-2",
+            min_replica_count           = 1,
+            max_replica_count           = 3,
+            traffic_percentage          = primary_pct,
+        )
+        logger.info( f"Model deployed with {primary_pct}% traffic" )
+    except Exception as e:
+        logger.error( f"Model deployment failed: {e}" )
+        raise
+
+    # Undeploy previous model versions if requested
+    undeployed_models = []
+    if undeploy_previous and existing_models:
+        for model_id, display_name in existing_models.items():
+            try:
+                endpoint.undeploy( deployed_model_id=model_id )
+                undeployed_models.append( display_name )
+                logger.info( f"Undeployed previous model: {display_name}" )
+            except Exception as e:
+                logger.warning( f"Failed to undeploy {display_name}: {e}" )
 
     return {
-        "mode"          : "vertex_ai",
-        "endpoint_name" : endpoint.resource_name,
-        "endpoint_uri"  : endpoint.gca_resource.name,
-        "traffic_split" : traffic_split,
+        "mode"              : "vertex_ai",
+        "endpoint_name"     : endpoint.resource_name,
+        "endpoint_uri"      : endpoint.gca_resource.name,
+        "model_name"        : model.resource_name,
+        "traffic_split"     : traffic_split,
+        "serving_container" : serving_container_uri,
+        "undeployed_models" : undeployed_models,
     }

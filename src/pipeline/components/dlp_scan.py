@@ -82,15 +82,26 @@ def dlp_scan(
     df = pd.read_parquet( input_path )
 
     if use_cloud_dlp and project_id:
-        report = _scan_with_cloud_dlp( df, project_id, inspect_template )
+        report = _scan_with_cloud_dlp( df, project_id, inspect_template, deidentify_template )
     else:
         report = _scan_local( df )
 
     # Redact PII columns
     df_redacted = _redact_pii_columns( df.copy(), redact_mode )
 
-    # Redact PII in free-text fields
-    df_redacted = _redact_text_fields( df_redacted )
+    # Apply Cloud DLP de-identification results if available
+    deidentified_columns = report.get( "deidentified_columns", {} )
+    if deidentified_columns:
+        for col, deidentified_values in deidentified_columns.items():
+            if col in df_redacted.columns:
+                # Replace non-null values with de-identified versions
+                non_null_idx = df_redacted[ col ].dropna().index[ :len( deidentified_values ) ]
+                for idx, value in zip( non_null_idx, deidentified_values ):
+                    df_redacted.at[ idx, col ] = value
+                logger.info( f"Applied Cloud DLP de-identification to column: {col}" )
+    else:
+        # Redact PII in free-text fields using local regex patterns
+        df_redacted = _redact_text_fields( df_redacted )
 
     # Check PII density in scanned text fields
     text_pii_density = report.get( "text_field_pii_density", 0.0 )
@@ -170,27 +181,34 @@ def _scan_local( df: pd.DataFrame ) -> dict:
 
 
 def _scan_with_cloud_dlp(
-    df           : pd.DataFrame,
-    project_id   : str,
-    inspect_template: Optional[str],
+    df                  : pd.DataFrame,
+    project_id          : str,
+    inspect_template    : Optional[str],
+    deidentify_template : Optional[str] = None,
 ) -> dict:
     """
-    Scan using Google Cloud DLP API.
+    Scan and optionally de-identify using Google Cloud DLP API.
 
     Requires:
         - google-cloud-dlp installed
         - GCP credentials configured
+        - project_id is a valid GCP project ID
 
     Ensures:
         - Returns report matching local scan format
+        - If deidentify_template provided, includes deidentified text in report
+        - Computes text_field_pii_density from inspection findings
     """
     from google.cloud import dlp_v2
 
     client = dlp_v2.DlpServiceClient()
     parent = f"projects/{project_id}/locations/us-central1"
 
-    findings = {}
+    findings       = {}
     total_findings = 0
+    text_field_total    = 0
+    text_field_findings = 0
+    deidentified_columns = {}
 
     # Scan free-text columns via DLP API
     for col in SCAN_COLUMNS:
@@ -201,21 +219,23 @@ def _scan_with_cloud_dlp(
         if not text_values:
             continue
 
-        # Batch scan (up to 50K items, DLP handles batching)
-        items = [{"value": str( v )} for v in text_values[ :500 ]]  # Sample first 500
+        text_field_total += len( text_values )
 
-        inspect_config = {"info_types": [{"name": t} for t in PII_PATTERNS.keys() if t != "PERSON_NAME"]}
+        # Batch scan (up to 50K items, DLP handles batching)
+        items = [ { "value": str( v ) } for v in text_values[ :500 ] ]  # Sample first 500
+
+        inspect_config = { "info_types": [ { "name": t } for t in PII_PATTERNS.keys() if t != "PERSON_NAME" ] }
         if inspect_template:
             request = {
-                "parent"           : parent,
-                "inspect_template_name": inspect_template,
-                "item"             : {"table": {"rows": [{"values": items}]}},
+                "parent"                : parent,
+                "inspect_template_name" : inspect_template,
+                "item"                  : { "table": { "rows": [ { "values": items } ] } },
             }
         else:
             request = {
                 "parent"         : parent,
                 "inspect_config" : inspect_config,
-                "item"           : {"value": "\n".join( str( v ) for v in text_values[ :500 ] )},
+                "item"           : { "value": "\n".join( str( v ) for v in text_values[ :500 ] ) },
             }
 
         response = client.inspect_content( request=request )
@@ -223,15 +243,42 @@ def _scan_with_cloud_dlp(
         for finding in response.result.findings:
             info_type = finding.info_type.name
             findings[ info_type ] = findings.get( info_type, 0 ) + 1
-            total_findings += 1
+            total_findings      += 1
+            text_field_findings += 1
 
-    return {
+        # De-identify free-text fields if template provided
+        if deidentify_template:
+            deidentified_values = []
+            for value in text_values[ :500 ]:
+                deidentify_request = {
+                    "parent"                  : parent,
+                    "deidentify_template_name": deidentify_template,
+                    "item"                    : { "value": str( value ) },
+                }
+                if inspect_template:
+                    deidentify_request[ "inspect_template_name" ] = inspect_template
+                else:
+                    deidentify_request[ "inspect_config" ] = inspect_config
+
+                deidentify_response = client.deidentify_content( request=deidentify_request )
+                deidentified_values.append( deidentify_response.item.value )
+
+            deidentified_columns[ col ] = deidentified_values
+
+    text_pii_density = text_field_findings / text_field_total if text_field_total > 0 else 0.0
+
+    report = {
         "scan_mode"              : "cloud_dlp",
         "total_findings"         : total_findings,
         "findings_by_type"       : findings,
-        "text_field_pii_density" : 0.0,  # Computed from findings
+        "text_field_pii_density" : round( float( text_pii_density ), 4 ),
         "rows_scanned"           : len( df ),
     }
+
+    if deidentified_columns:
+        report[ "deidentified_columns" ] = deidentified_columns
+
+    return report
 
 
 def _redact_pii_columns( df: pd.DataFrame, mode: str ) -> pd.DataFrame:

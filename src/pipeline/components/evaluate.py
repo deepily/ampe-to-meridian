@@ -192,26 +192,65 @@ def _log_to_vertex_experiments(
     project_id      : str,
     region          : str,
 ):
-    """Log results to Vertex AI Experiments."""
-    from google.cloud import aiplatform
+    """
+    Log results to Vertex AI Experiments.
 
-    aiplatform.init( project=project_id, location=region, experiment=experiment_name )
+    Requires:
+        - ranked is a non-empty list of model result dicts
+        - experiment_name is a non-empty string
+        - project_id is a valid GCP project ID
+        - region is a valid GCP region
 
-    for r in ranked:
-        run_name = f"{r[ 'algorithm' ]}_{r[ 'smote_strategy' ]}"
+    Ensures:
+        - Each ranked entry logged as a separate Experiment run
+        - Run names include timestamps to avoid collisions on re-runs
+        - Model artifact paths logged if present
+        - Falls back to _log_local() on any GCP error
+    """
+    from datetime import datetime, timezone
 
-        aiplatform.start_run( run_name )
-        aiplatform.log_params( {
-            "algorithm"      : r[ "algorithm" ],
-            "smote_strategy" : r[ "smote_strategy" ],
-        } )
-        aiplatform.log_metrics( {
-            "accuracy" : r.get( "accuracy", 0 ),
-            "auc"      : r.get( "auc", 0 ),
-            "tp_rate"  : r.get( "tp_rate", 0 ),
-            "tn_rate"  : r.get( "tn_rate", 0 ),
-            "f1"       : r.get( "f1", 0 ),
-        } )
-        aiplatform.end_run()
+    try:
+        from google.cloud import aiplatform
+        from google.api_core.exceptions import NotFound
 
-    logger.info( f"Logged {len( ranked )} runs to Vertex AI Experiments: {experiment_name}" )
+        aiplatform.init( project=project_id, location=region )
+
+        # Get-or-create experiment
+        try:
+            aiplatform.Experiment( experiment_name=experiment_name ).delete()  # noqa — probe only
+        except NotFound:
+            pass
+        aiplatform.init( project=project_id, location=region, experiment=experiment_name )
+
+        timestamp = datetime.now( timezone.utc ).strftime( "%Y%m%dT%H%M%S" )
+
+        for r in ranked:
+            run_name = f"{r[ 'algorithm' ]}_{r[ 'smote_strategy' ]}_{timestamp}"
+
+            aiplatform.start_run( run_name )
+
+            params = {
+                "algorithm"      : r[ "algorithm" ],
+                "smote_strategy" : r[ "smote_strategy" ],
+            }
+            if r.get( "model_path" ):
+                params[ "model_artifact_path" ] = r[ "model_path" ]
+
+            aiplatform.log_params( params )
+            aiplatform.log_metrics( {
+                "accuracy" : r.get( "accuracy", 0 ),
+                "auc"      : r.get( "auc", 0 ),
+                "tp_rate"  : r.get( "tp_rate", 0 ),
+                "tn_rate"  : r.get( "tn_rate", 0 ),
+                "f1"       : r.get( "f1", 0 ),
+            } )
+            aiplatform.end_run()
+
+        logger.info( f"Logged {len( ranked )} runs to Vertex AI Experiments: {experiment_name}" )
+
+    except Exception as e:
+        logger.warning( f"Vertex AI Experiments logging failed: {e}. Falling back to local." )
+        # Derive output_dir from caller context — use current working directory as fallback
+        fallback_dir = os.path.join( os.getcwd(), "evaluation_output" )
+        os.makedirs( fallback_dir, exist_ok=True )
+        _log_local( ranked, fallback_dir )

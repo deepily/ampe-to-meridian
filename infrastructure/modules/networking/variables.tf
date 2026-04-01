@@ -24,3 +24,15 @@ variable "access_level_members" {
   type        = list( string )
   default     = []
 }
+
+variable "enable_vpc_sc" {
+  description = "Enable VPC Service Controls (requires org-level Access Context Manager)"
+  type        = bool
+  default     = false
+}
+
+variable "organization_id" {
+  description = "GCP organization ID for VPC Service Controls (required if enable_vpc_sc = true)"
+  type        = string
+  default     = ""
+}

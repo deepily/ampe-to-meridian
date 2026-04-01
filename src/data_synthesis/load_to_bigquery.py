@@ -55,9 +55,9 @@ def load_to_bigquery(
         - Tables are overwritten (WRITE_TRUNCATE) with fresh data
         - Returns dict of {table_name: row_count}
     """
-    from google.cloud import bigquery
+    from utils.bq_client import BigQueryClient
 
-    client  = bigquery.Client( project=project_id )
+    bq      = BigQueryClient( project_id )
     results = {}
 
     for parquet_name, bq_table in TABLE_MAP.items():
@@ -68,18 +68,10 @@ def load_to_bigquery(
         df       = pd.read_parquet( path )
         table_id = f"{project_id}.{dataset_id}.{bq_table}"
 
-        job_config = bigquery.LoadJobConfig(
-            write_disposition = bigquery.WriteDisposition.WRITE_TRUNCATE,
-            source_format     = bigquery.SourceFormat.PARQUET,
-        )
-
         print( f"  Loading {parquet_name} -> {table_id} ({len( df ):,} rows)..." )
-        job = client.load_table_from_dataframe( df, table_id, job_config=job_config )
-        job.result()  # Wait for completion
-
-        table        = client.get_table( table_id )
-        results[ bq_table ] = table.num_rows
-        print( f"    Done. Verified: {table.num_rows:,} rows in BigQuery." )
+        row_count            = bq.load_from_dataframe( df, table_id )
+        results[ bq_table ]  = row_count
+        print( f"    Done. Verified: {row_count:,} rows in BigQuery." )
 
     return results
 
@@ -99,21 +91,19 @@ def upload_to_gcs(
         - Files uploaded to gs://bucket_name/synthetic/
         - Returns list of GCS URIs
     """
-    from google.cloud import storage
+    from utils.gcs_client import GCSClient
 
-    client = storage.Client()
-    bucket = client.bucket( bucket_name )
-    uris   = []
+    gcs  = GCSClient( bucket_name )
+    uris = []
 
     for filename in os.listdir( data_dir ):
         if filename.endswith( ( ".parquet", ".csv" ) ):
             local_path = os.path.join( data_dir, filename )
             blob_path  = f"synthetic/{filename}"
-            blob       = bucket.blob( blob_path )
 
             print( f"  Uploading {filename} -> gs://{bucket_name}/{blob_path}..." )
-            blob.upload_from_filename( local_path )
-            uris.append( f"gs://{bucket_name}/{blob_path}" )
+            uri = gcs.upload_file( local_path, blob_path )
+            uris.append( uri )
 
     return uris
 

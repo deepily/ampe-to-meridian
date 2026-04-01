@@ -156,6 +156,7 @@ resource "google_data_loss_prevention_inspect_template" "ferpa_pii" {
 
     limits {
       max_findings_per_request = 1000
+      max_findings_per_item    = 100
     }
   }
 }
@@ -171,7 +172,7 @@ resource "google_data_loss_prevention_deidentify_template" "ferpa_redact" {
     info_type_transformations {
       transformations {
         primitive_transformation {
-          replace_with_info_type_config {}
+          replace_with_info_type_config = true
         }
       }
     }

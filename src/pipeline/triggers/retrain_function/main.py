@@ -8,6 +8,7 @@ Demonstrates Extensibility competency (event-driven ML lifecycle).
 """
 
 import base64
+import datetime
 import json
 import os
 
@@ -40,16 +41,59 @@ def trigger_retrain( event, context ):
     reason = config.get( "reason", "manual" )
     logger.info( f"Retraining triggered. Reason: {reason}" )
 
-    project_id = os.environ.get( "GCP_PROJECT_ID", "ampe-to-meridian" )
-    region     = os.environ.get( "GCP_REGION", "us-central1" )
+    project_id     = os.environ.get( "GCP_PROJECT_ID", "ampe-to-meridian" )
+    region         = os.environ.get( "GCP_REGION", "us-central1" )
+    pipeline_name  = config.get( "pipeline_name", "meridian-retention-pipeline" )
 
     try:
-        from google.cloud import aiplatform
-        aiplatform.init( project=project_id, location=region )
-
+        resource_name = _trigger_retraining( project_id, region, pipeline_name, logger )
         logger.info(
-            f"Would submit pipeline job to {project_id}/{region}. "
+            f"Pipeline submitted successfully: {resource_name}. "
             f"Config: {json.dumps( config, default=str )[ :200 ]}"
         )
     except Exception as e:
         logger.error( f"Failed to submit retraining job: {e}" )
+
+
+def _trigger_retraining( project_id, region, pipeline_name="meridian-retention-pipeline", logger=None ):
+    """
+    Submit a Vertex AI Pipeline job for retraining.
+
+    Requires:
+        - project_id is a valid GCP project ID
+        - region is a valid GCP region
+        - pipeline_name is the name of the compiled pipeline template
+
+    Ensures:
+        - A new PipelineJob is submitted to Vertex AI
+        - Returns the resource name of the submitted job
+
+    Raises:
+        - Exception if pipeline submission fails
+    """
+    import logging
+    if logger is None:
+        logger = logging.getLogger( "retrain_trigger" )
+
+    from google.cloud import aiplatform
+
+    aiplatform.init( project=project_id, location=region )
+
+    # Compiled pipeline template location in GCS
+    template_path = f"gs://meridian-pipeline-artifacts-dev-{project_id}/pipelines/{pipeline_name}.json"
+
+    job = aiplatform.PipelineJob(
+        display_name     = f"{pipeline_name}-retrain-{datetime.datetime.now().strftime( '%Y%m%d-%H%M%S' )}",
+        template_path    = template_path,
+        pipeline_root    = f"gs://meridian-pipeline-artifacts-dev-{project_id}/pipeline-runs",
+        parameter_values = {
+            "trigger" : "drift_alert",
+        },
+    )
+
+    job.submit(
+        service_account = f"meridian-pipeline-dev@{project_id}.iam.gserviceaccount.com",
+    )
+
+    logger.info( f"Retraining pipeline submitted: {job.resource_name}" )
+    return job.resource_name

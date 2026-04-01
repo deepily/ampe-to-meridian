@@ -31,14 +31,15 @@ logger = get_logger( __name__, component="explain" )
 
 
 def explain(
-    input_path        : str,
-    model_path        : str,
-    output_dir        : str,
-    target_column     : str = "second_year_ret_flag",
-    top_n_features    : int = 15,
-    use_vertex_xai    : bool = False,
-    project_id        : Optional[str] = None,
-    region            : Optional[str] = None,
+    input_path              : str,
+    model_path              : str,
+    output_dir              : str,
+    target_column           : str = "second_year_ret_flag",
+    top_n_features          : int = 15,
+    use_vertex_xai          : bool = False,
+    project_id              : Optional[str] = None,
+    region                  : Optional[str] = None,
+    endpoint_resource_name  : Optional[str] = None,
 ) -> dict:
     """
     Compute feature attributions for the winning model.
@@ -75,13 +76,26 @@ def explain(
     # ---- Permutation importance (model-agnostic) ----
     perm_importance = _permutation_importance( model, X, y ) if y is not None else {}
 
+    # ---- Vertex Explainable AI (Sampled Shapley) ----
+    vertex_xai_importance = {}
+    if use_vertex_xai and endpoint_resource_name and project_id:
+        vertex_xai_importance = _explain_with_vertex_xai(
+            endpoint_resource_name = endpoint_resource_name,
+            instances              = X.head( 50 ),
+            project_id             = project_id,
+            region                 = region,
+        )
+
     # ---- Merge and rank ----
     all_features = {}
     for feat in X.columns:
-        all_features[ feat ] = {
+        feat_entry = {
             "native_importance"      : native_importance.get( feat, 0.0 ),
             "permutation_importance" : perm_importance.get( feat, 0.0 ),
         }
+        if vertex_xai_importance:
+            feat_entry[ "vertex_xai_attribution" ] = vertex_xai_importance.get( feat, 0.0 )
+        all_features[ feat ] = feat_entry
 
     # Rank by native importance (or permutation if no native)
     ranked = sorted(
@@ -100,8 +114,9 @@ def explain(
         "model_type"          : type( model ).__name__,
         "total_features"      : len( X.columns ),
         "top_features"        : top_features,
-        "explanation_method"  : "native_importance + permutation",
+        "explanation_method"  : "native_importance + permutation" + ( " + vertex_xai" if vertex_xai_importance else "" ),
         "mode"                : "vertex_xai" if use_vertex_xai else "local",
+        "vertex_xai_enabled"  : bool( vertex_xai_importance ),
     }
 
     # Save report
@@ -173,4 +188,81 @@ def _permutation_importance(
         }
     except Exception as e:
         logger.warning( f"Permutation importance failed: {e}" )
+        return {}
+
+
+def _explain_with_vertex_xai(
+    endpoint_resource_name : str,
+    instances              : pd.DataFrame,
+    project_id             : str,
+    region                 : Optional[str] = None,
+) -> dict:
+    """
+    Compute feature attributions using Vertex Explainable AI (Sampled Shapley).
+
+    Requires:
+        - endpoint_resource_name is a valid Vertex AI endpoint with explanations enabled
+        - instances is a DataFrame of input features to explain
+        - project_id is a valid GCP project ID
+
+    Ensures:
+        - Calls aiplatform.Endpoint.explain() with Sampled Shapley method
+        - Parses returned attributions into a feature-name to mean-attribution dict
+        - Falls back to empty dict if endpoint unavailable or explain fails
+
+    Raises:
+        - Does not raise; logs warnings and returns empty dict on failure
+    """
+    try:
+        from google.cloud import aiplatform
+
+        aiplatform.init( project=project_id, location=region )
+
+        endpoint = aiplatform.Endpoint( endpoint_resource_name )
+
+        # Convert DataFrame rows to list of dicts for prediction
+        instance_list = instances.values.tolist()
+
+        # Call explain with Sampled Shapley
+        response = endpoint.explain(
+            instances  = instance_list,
+            parameters = { "sampled_shapley_attribution": { "path_count": 25 } },
+        )
+
+        # Parse attributions from response
+        feature_names  = instances.columns.tolist()
+        attributions   = {}
+
+        for explanation in response.explanations:
+            for attribution in explanation.attributions:
+                feature_attrs = attribution.feature_attributions
+
+                if isinstance( feature_attrs, dict ):
+                    # Named attributions
+                    for feat_name, attr_value in feature_attrs.items():
+                        if feat_name not in attributions:
+                            attributions[ feat_name ] = []
+                        attributions[ feat_name ].append( float( attr_value ) )
+                elif isinstance( feature_attrs, list ) and len( feature_attrs ) == len( feature_names ):
+                    # Positional attributions
+                    for feat_name, attr_value in zip( feature_names, feature_attrs ):
+                        if feat_name not in attributions:
+                            attributions[ feat_name ] = []
+                        attributions[ feat_name ].append( float( attr_value ) )
+
+        # Average attributions across instances
+        mean_attributions = {
+            feat: float( np.mean( np.abs( vals ) ) )
+            for feat, vals in attributions.items()
+        }
+
+        logger.info(
+            f"Vertex XAI attributions computed for {len( mean_attributions )} features "
+            f"across {len( instance_list )} instances"
+        )
+
+        return mean_attributions
+
+    except Exception as e:
+        logger.warning( f"Vertex Explainable AI failed: {e}. Using local importance only." )
         return {}
