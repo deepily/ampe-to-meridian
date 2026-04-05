@@ -128,6 +128,37 @@ resource "google_kms_crypto_key_iam_member" "pipeline_gcs_key" {
   member        = "serviceAccount:${google_service_account.pipeline.email}"
 }
 
+# ---- Grant KMS access to Google-managed service agents (required for CMEK) ----
+
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
+# BigQuery service agent: encrypts tables in the dataset
+resource "google_kms_crypto_key_iam_member" "bq_service_agent" {
+  crypto_key_id = google_kms_crypto_key.bigquery.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:bq-${data.google_project.current.number}@bigquery-encryption.iam.gserviceaccount.com"
+}
+
+# Cloud Storage service agent: encrypts objects written to CMEK-enabled buckets.
+# The service identity is provisioned via google_project_service_identity (needed
+# to trigger creation) but we reference the predictable service-account name
+# directly to avoid null-email race on first apply.
+resource "google_project_service_identity" "gcs" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "storage.googleapis.com"
+}
+
+resource "google_kms_crypto_key_iam_member" "gcs_service_agent" {
+  crypto_key_id = google_kms_crypto_key.gcs.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.current.number}@gs-project-accounts.iam.gserviceaccount.com"
+
+  depends_on = [google_project_service_identity.gcs]
+}
+
 # ---- Cloud DLP Inspect Template ----
 
 resource "google_data_loss_prevention_inspect_template" "ferpa_pii" {

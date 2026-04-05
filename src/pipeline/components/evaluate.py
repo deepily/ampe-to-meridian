@@ -32,7 +32,7 @@ from sklearn.metrics import (
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="evaluate" )
+logger = get_logger( __name__ )
 
 
 def evaluate(

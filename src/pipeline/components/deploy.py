@@ -25,7 +25,7 @@ import pandas as pd
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="deploy" )
+logger = get_logger( __name__ )
 
 
 def deploy(

@@ -4,6 +4,8 @@ PYTHON     := python
 PYTEST     := pytest
 TF_DIR     := infrastructure/environments/dev
 TF         := terraform -chdir=$(TF_DIR)
+TF_VARS    := -var-file=dev.tfvars
+TF_BACKEND := -backend-config="bucket=meridian-tfstate-dev-ampe-to-meridian"
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -31,14 +33,20 @@ chaos: ## Run chaos tests (drift injection, endpoint failure, data corruption)
 lint: ## Run linter
 	ruff check src/ tests/
 
+tf-init: ## Initialize Terraform (once per machine)
+	$(TF) init $(TF_BACKEND)
+
+tf-plan: ## Show planned Terraform changes
+	$(TF) plan $(TF_VARS)
+
 deploy: ## Deploy all Terraform infrastructure
-	$(TF) init
-	$(TF) apply -auto-approve
+	$(TF) init $(TF_BACKEND)
+	$(TF) apply -auto-approve $(TF_VARS)
 
 destroy: ## Tear down ALL resources
-	$(TF) destroy -auto-approve
+	$(TF) destroy -auto-approve $(TF_VARS)
 
-destroy-expensive: ## Tear down only expensive resources (Memorystore, GLB, Prediction endpoint)
-	$(TF) destroy -auto-approve \
+destroy-expensive: ## Tear down only expensive resources (GLB, Feature Store, endpoints)
+	$(TF) destroy -auto-approve $(TF_VARS) \
 		-target=module.api \
-		-target=module.serving
+		-target=module.vertex

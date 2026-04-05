@@ -14,14 +14,13 @@ Ensures:
     - Output is fully numeric (ready for modeling)
 """
 
-import os
-
 import numpy as np
 import pandas as pd
 
+from utils.io_utils import write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="clean" )
+logger = get_logger( __name__ )
 
 # Columns to always skip in encoding/dropping
 SKIP_COLUMNS = {"student_id", "event_type", "event_date", "term"}
@@ -104,8 +103,7 @@ def clean(
     for col in bool_cols:
         df[ col ] = df[ col ].astype( int )
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df.to_parquet( output_path, index=False )
+    write_parquet( df, output_path )
 
     report = {
         "initial_columns"    : initial_cols,

@@ -54,7 +54,7 @@ class StructuredFormatter( logging.Formatter ):
         return json.dumps( log_entry )
 
 
-def get_logger( name: str, component: str = "meridian", level: int = logging.INFO ) -> logging.Logger:
+def get_logger( name: str, component: str = None, level: int = logging.INFO ) -> logging.Logger:
     """
     Get a structured logger for pipeline components.
 
@@ -63,8 +63,13 @@ def get_logger( name: str, component: str = "meridian", level: int = logging.INF
 
     Ensures:
         - Returns a logger with structured JSON formatting
+        - component is auto-derived from the last dotted segment of name
+          (e.g. "pipeline.components.clean" -> "clean") when not passed
         - Uses Cloud Logging handler if available, else console
     """
+    if component is None:
+        component = name.split( "." )[-1] if "." in name else "meridian"
+
     logger = logging.getLogger( name )
 
     if logger.handlers:

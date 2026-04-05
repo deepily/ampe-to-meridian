@@ -18,15 +18,15 @@ Ensures:
 """
 
 import json
-import os
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 
+from utils.io_utils import ensure_parent_dir, write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="validate" )
+logger = get_logger( __name__ )
 
 
 def validate_data(
@@ -141,13 +141,12 @@ def validate_data(
 
     # Save schema stats
     if schema_output_path:
-        os.makedirs( os.path.dirname( schema_output_path ) or ".", exist_ok=True )
+        ensure_parent_dir( schema_output_path )
         with open( schema_output_path, "w" ) as f:
             json.dump( schema_stats, f, indent=2, default=str )
 
     # Write validated data (pass-through)
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df.to_parquet( output_path, index=False )
+    write_parquet( df, output_path )
 
     # Raise if too many critical anomalies
     if anomaly_threshold > 0 and error_count > anomaly_threshold:

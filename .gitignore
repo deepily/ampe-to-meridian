@@ -48,5 +48,12 @@ crash.log
 # GCP
 application_default_credentials.json
 
-# Claude session manifest
+# Claude session manifest + local editor state
 .claude-session.md
+.claude/
+
+# Pipeline ephemera (regeneratable outputs)
+data/pipeline_output/
+meridian_data_prep_pipeline.json
+infrastructure/modules/pubsub/tmp/
+*.tfplan

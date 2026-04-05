@@ -20,7 +20,7 @@ import pandas as pd
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="bq_client" )
+logger = get_logger( __name__ )
 
 
 class BigQueryClient:
@@ -57,9 +57,17 @@ class BigQueryClient:
 
         Ensures:
             - Returns a pandas DataFrame with all rows
+            - DATE columns converted to pandas datetime64 (avoids db-dtypes
+              extension type that breaks parquet round-trips between KFP tasks)
         """
         logger.info( f"Reading rows from {table_id}" )
         df = self.client.list_rows( table_id ).to_dataframe()
+        # Coerce db-dtypes DATE/TIME extension types to plain datetime to keep
+        # parquet files portable across pipeline tasks.
+        for col in df.columns:
+            dtype_name = str( df[ col ].dtype )
+            if dtype_name in ( "dbdate", "dbtime" ):
+                df[ col ] = pd.to_datetime( df[ col ], errors="coerce" )
         logger.info( f"  Read {len( df ):,} rows from {table_id}" )
         return df
 

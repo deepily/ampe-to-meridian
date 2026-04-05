@@ -24,7 +24,7 @@ from sklearn.model_selection import RandomizedSearchCV, train_test_split
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="tune" )
+logger = get_logger( __name__ )
 
 # ---- Hyperparameter Search Spaces ----
 

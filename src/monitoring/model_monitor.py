@@ -27,7 +27,7 @@ from scipy import stats as scipy_stats
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="model_monitor" )
+logger = get_logger( __name__ )
 
 
 def monitor_drift(

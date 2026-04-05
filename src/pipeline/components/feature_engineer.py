@@ -14,14 +14,13 @@ Ensures:
     - Output has additional derived feature columns
 """
 
-import os
-
 import numpy as np
 import pandas as pd
 
+from utils.io_utils import write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="feature_engineer" )
+logger = get_logger( __name__ )
 
 
 def feature_engineer(
@@ -128,8 +127,7 @@ def feature_engineer(
         if col in df.columns:
             df[ col ] = df[ col ].fillna( -1.0 )
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df.to_parquet( output_path, index=False )
+    write_parquet( df, output_path )
 
     report = {
         "initial_columns"  : initial_cols,

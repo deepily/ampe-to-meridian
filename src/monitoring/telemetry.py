@@ -21,7 +21,7 @@ from typing import Optional
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="telemetry" )
+logger = get_logger( __name__ )
 
 _tracer = None
 _meter  = None

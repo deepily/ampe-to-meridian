@@ -19,7 +19,7 @@ from typing import List, Optional
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="gcs_client" )
+logger = get_logger( __name__ )
 
 
 class GCSClient:

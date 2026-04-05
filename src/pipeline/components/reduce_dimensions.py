@@ -13,14 +13,13 @@ Ensures:
     - Target column and student_id preserved
 """
 
-import os
-
 import numpy as np
 import pandas as pd
 
+from utils.io_utils import write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="reduce_dimensions" )
+logger = get_logger( __name__ )
 
 
 def reduce_dimensions(
@@ -91,8 +90,7 @@ def reduce_dimensions(
 
     df_reduced = df[ final_cols ].copy()
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df_reduced.to_parquet( output_path, index=False )
+    write_parquet( df_reduced, output_path )
 
     report = {
         "initial_features"       : initial_cols,

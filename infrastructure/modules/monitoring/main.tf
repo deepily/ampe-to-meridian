@@ -20,6 +20,7 @@ resource "google_monitoring_notification_channel" "email" {
 # ---- Alert Policy: Model Drift ----
 
 resource "google_monitoring_alert_policy" "drift_threshold" {
+  count        = var.enable_metric_alerts ? 1 : 0
   project      = var.project_id
   display_name = "Meridian Model Drift Alert (${var.environment})"
   combiner     = "OR"
@@ -53,6 +54,7 @@ resource "google_monitoring_alert_policy" "drift_threshold" {
 # ---- Alert Policy: Endpoint Errors ----
 
 resource "google_monitoring_alert_policy" "endpoint_errors" {
+  count        = var.enable_metric_alerts ? 1 : 0
   project      = var.project_id
   display_name = "Meridian Endpoint Error Rate (${var.environment})"
   combiner     = "OR"
@@ -86,6 +88,7 @@ resource "google_monitoring_alert_policy" "endpoint_errors" {
 # ---- Alert Policy: Pipeline Failure ----
 
 resource "google_monitoring_alert_policy" "pipeline_failure" {
+  count        = var.enable_metric_alerts ? 1 : 0
   project      = var.project_id
   display_name = "Meridian Pipeline Failure (${var.environment})"
   combiner     = "OR"

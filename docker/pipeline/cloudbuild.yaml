@@ -1,0 +1,14 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'us-central1-docker.pkg.dev/ampe-to-meridian/meridian/pipeline:v3'
+      - '-f'
+      - 'docker/pipeline/Dockerfile'
+      - '.'
+images:
+  - 'us-central1-docker.pkg.dev/ampe-to-meridian/meridian/pipeline:v3'
+timeout: '1200s'
+options:
+  logging: CLOUD_LOGGING_ONLY

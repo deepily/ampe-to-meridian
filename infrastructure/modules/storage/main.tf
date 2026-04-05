@@ -81,7 +81,7 @@ resource "google_storage_bucket" "pipeline_artifacts" {
 resource "google_storage_bucket" "tfstate" {
   name          = "meridian-tfstate-${var.environment}-${var.project_id}"
   project       = var.project_id
-  location      = var.location
+  location      = var.tfstate_location
   storage_class = "STANDARD"
 
   uniform_bucket_level_access = true
@@ -89,5 +89,9 @@ resource "google_storage_bucket" "tfstate" {
 
   versioning {
     enabled = true
+  }
+
+  lifecycle {
+    prevent_destroy = true
   }
 }

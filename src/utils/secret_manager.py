@@ -18,7 +18,7 @@ from typing import Optional
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="secret_manager" )
+logger = get_logger( __name__ )
 
 
 class SecretManagerClient:

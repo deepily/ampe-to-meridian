@@ -43,7 +43,7 @@ from sklearn.tree import DecisionTreeClassifier
 
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="train" )
+logger = get_logger( __name__ )
 
 # ---- Algorithm Registry ----
 

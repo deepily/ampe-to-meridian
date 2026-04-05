@@ -40,3 +40,9 @@ variable "endpoint_url" {
   type        = string
   default     = ""
 }
+
+variable "enable_metric_alerts" {
+  description = "Create alert policies that reference metrics (drift, 5xx errors, pipeline failures). Disable on first deploy, enable after metrics have been emitted at least once."
+  type        = bool
+  default     = false
+}

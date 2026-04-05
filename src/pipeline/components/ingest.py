@@ -19,9 +19,10 @@ from typing import Optional
 
 import pandas as pd
 
+from utils.io_utils import write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="ingest" )
+logger = get_logger( __name__ )
 
 
 def ingest_from_bigquery(
@@ -57,8 +58,7 @@ def ingest_from_bigquery(
 
     merged = merge_tables( dfs )
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    merged.to_parquet( output_path, index=False )
+    write_parquet( merged, output_path )
     logger.info( f"Merged dataset: {len( merged ):,} rows -> {output_path}" )
 
     return output_path
@@ -90,8 +90,7 @@ def ingest_from_local(
 
     merged = merge_tables( dfs )
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    merged.to_parquet( output_path, index=False )
+    write_parquet( merged, output_path )
     logger.info( f"Merged dataset: {len( merged ):,} rows -> {output_path}" )
 
     return output_path

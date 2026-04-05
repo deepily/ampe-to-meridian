@@ -13,15 +13,15 @@ Ensures:
     - Duplicate columns/rows removed
 """
 
-import os
 from datetime import date
 
 import numpy as np
 import pandas as pd
 
+from utils.io_utils import write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="harmonize" )
+logger = get_logger( __name__ )
 
 # Expected column types (matches BQ schema)
 EXPECTED_DTYPES = {
@@ -143,8 +143,7 @@ def harmonize(
     if extra_cols:
         logger.info( f"  Extra columns retained: {extra_cols}" )
 
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df.to_parquet( output_path, index=False )
+    write_parquet( df, output_path )
 
     report = {
         "initial_rows"     : initial_rows,

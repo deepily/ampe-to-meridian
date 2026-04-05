@@ -14,18 +14,18 @@ output "endpoint_dashboard_id" {
 }
 
 output "drift_alert_policy_id" {
-  description = "ID of the model drift alert policy"
-  value       = google_monitoring_alert_policy.drift_threshold.id
+  description = "ID of the model drift alert policy (empty when enable_metric_alerts = false)"
+  value       = var.enable_metric_alerts ? google_monitoring_alert_policy.drift_threshold[0].id : ""
 }
 
 output "endpoint_error_policy_id" {
-  description = "ID of the endpoint error rate alert policy"
-  value       = google_monitoring_alert_policy.endpoint_errors.id
+  description = "ID of the endpoint error rate alert policy (empty when enable_metric_alerts = false)"
+  value       = var.enable_metric_alerts ? google_monitoring_alert_policy.endpoint_errors[0].id : ""
 }
 
 output "pipeline_failure_policy_id" {
-  description = "ID of the pipeline failure alert policy"
-  value       = google_monitoring_alert_policy.pipeline_failure.id
+  description = "ID of the pipeline failure alert policy (empty when enable_metric_alerts = false)"
+  value       = var.enable_metric_alerts ? google_monitoring_alert_policy.pipeline_failure[0].id : ""
 }
 
 output "notification_channel_id" {

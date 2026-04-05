@@ -14,14 +14,14 @@ Ensures:
 """
 
 import json
-import os
 from typing import Optional
 
 import pandas as pd
 
+from utils.io_utils import ensure_parent_dir, write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="feature_store_sync" )
+logger = get_logger( __name__ )
 
 # Features to sync (subset of engineered features)
 FEATURE_COLUMNS = [
@@ -79,8 +79,7 @@ def feature_store_sync(
         logger.info( "Local mode: exporting features as Parquet (no Vertex AI Feature Store)" )
 
     # Save feature export
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    feature_df.to_parquet( output_path, index=False )
+    write_parquet( feature_df, output_path )
 
     report = {
         "entities_synced"  : len( feature_df ),
@@ -90,7 +89,7 @@ def feature_store_sync(
     }
 
     if report_path:
-        os.makedirs( os.path.dirname( report_path ) or ".", exist_ok=True )
+        ensure_parent_dir( report_path )
         with open( report_path, "w" ) as f:
             json.dump( report, f, indent=2 )
 

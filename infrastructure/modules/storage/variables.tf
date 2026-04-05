@@ -9,7 +9,13 @@ variable "environment" {
 }
 
 variable "location" {
-  description = "GCS bucket location"
+  description = "GCS bucket location for data buckets (training_data, pipeline_artifacts). Must match KMS key ring region when CMEK is used."
+  type        = string
+  default     = "US"
+}
+
+variable "tfstate_location" {
+  description = "GCS bucket location for the tfstate bucket (decoupled from data buckets because tfstate does not use CMEK)."
   type        = string
   default     = "US"
 }

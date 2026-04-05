@@ -44,6 +44,12 @@ resource "google_bigquery_table" "student_demographics" {
     pii_level = "high"
     table     = "demographics"
   }
+
+  # Tables inherit CMEK from the dataset's default_encryption_configuration.
+  # Ignore table-level encryption drift.
+  lifecycle {
+    ignore_changes = [encryption_configuration]
+  }
 }
 
 # ---- Table: academic_records ----
@@ -74,6 +80,10 @@ resource "google_bigquery_table" "academic_records" {
     pii_level = "low"
     table     = "academics"
   }
+
+  lifecycle {
+    ignore_changes = [encryption_configuration]
+  }
 }
 
 # ---- Table: financial_aid ----
@@ -89,6 +99,10 @@ resource "google_bigquery_table" "financial_aid" {
   labels = {
     pii_level = "medium"
     table     = "financial"
+  }
+
+  lifecycle {
+    ignore_changes = [encryption_configuration]
   }
 }
 
@@ -115,6 +129,10 @@ resource "google_bigquery_table" "enrollment_events" {
     table     = "enrollment"
     target    = "second_year_ret_flag"
   }
+
+  lifecycle {
+    ignore_changes = [encryption_configuration]
+  }
 }
 
 # ---- Prediction Logging Table ----
@@ -137,5 +155,9 @@ resource "google_bigquery_table" "prediction_log" {
   labels = {
     pii_level = "low"
     table     = "predictions"
+  }
+
+  lifecycle {
+    ignore_changes = [encryption_configuration]
   }
 }

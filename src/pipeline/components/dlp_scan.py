@@ -19,15 +19,15 @@ Ensures:
 """
 
 import json
-import os
 import re
 from typing import Optional
 
 import pandas as pd
 
+from utils.io_utils import ensure_parent_dir, write_parquet
 from utils.logging_config import get_logger
 
-logger = get_logger( __name__, component="dlp_scan" )
+logger = get_logger( __name__ )
 
 # PII detection patterns (local mode, no GCP needed)
 PII_PATTERNS = {
@@ -116,12 +116,11 @@ def dlp_scan(
         )
 
     # Save redacted data
-    os.makedirs( os.path.dirname( output_path ) or ".", exist_ok=True )
-    df_redacted.to_parquet( output_path, index=False )
+    write_parquet( df_redacted, output_path )
 
     # Save report
     if report_path:
-        os.makedirs( os.path.dirname( report_path ) or ".", exist_ok=True )
+        ensure_parent_dir( report_path )
         with open( report_path, "w" ) as f:
             json.dump( report, f, indent=2 )
 
